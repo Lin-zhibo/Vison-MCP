@@ -6,6 +6,8 @@ import { handleUiToArtifact } from "./tools/ui-to-artifact.js";
 import { handleDiagnoseError } from "./tools/diagnose-error.js";
 import { handleUnderstandDiagram } from "./tools/understand-diagram.js";
 import { handleAnalyzeVisualization } from "./tools/analyze-visualization.js";
+import { handleUiDiff } from "./tools/ui-diff.js";
+import { handleVideoAnalysis } from "./tools/video-analysis.js";
 
 const server = new McpServer({
   name: "vison-mcp",
@@ -141,6 +143,35 @@ server.tool(
       ),
   },
   async ({ imageUrl, analysisFocus }) => handleAnalyzeVisualization(imageUrl, analysisFocus),
+);
+
+// --- ui_diff_check ---
+server.tool(
+  "ui_diff_check",
+  "Compare two UI screenshots — design vs implementation — to identify visual differences, " +
+    "layout drift, style inconsistencies, missing elements, and typography discrepancies.",
+  {
+    expectedUrl: z.string().describe("Design/expected UI: data URI, http(s) URL, or local file path"),
+    actualUrl: z.string().describe("Implementation/actual UI: data URI, http(s) URL, or local file path"),
+    prompt: z.string().optional().describe("Optional focus areas for the comparison"),
+  },
+  async ({ expectedUrl, actualUrl, prompt }) => handleUiDiff(expectedUrl, actualUrl, prompt),
+);
+
+// --- video_analysis ---
+server.tool(
+  "video_analysis",
+  "Inspect videos (local files ≤8MB, remote URLs) to describe scenes, detect events, " +
+    "and answer questions about visual moments. Supports MP4, MOV, M4V.",
+  {
+    videoUrl: z.string().describe("Video source: local file path, http(s) URL. Supported: mp4, mov, m4v."),
+    prompt: z.string().optional().describe("Analysis focus or question about the video"),
+    maxFrames: z.number().min(1).max(100).optional().default(30)
+      .describe("Maximum frames in frame-sampling mode (1-100)"),
+    fps: z.number().min(0.1).max(10).optional().default(1)
+      .describe("Sampling rate in FPS for frame-sampling mode (0.1-10)"),
+  },
+  async ({ videoUrl, prompt, maxFrames, fps }) => handleVideoAnalysis(videoUrl, prompt, maxFrames, fps),
 );
 
 export { server };
