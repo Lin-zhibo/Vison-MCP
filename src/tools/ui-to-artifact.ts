@@ -16,6 +16,7 @@ export async function handleUiToArtifact(
     return {
       content: [{ type: "text", text: result.text }],
       structuredContent: {
+        text: result.text,
         model: result.model,
         outputType,
         usage: result.usage,

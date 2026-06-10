@@ -69,7 +69,10 @@ export async function analyzeImage(
 
   const model = config.model ?? defaultModel;
   const maxRetries = config.retries ?? 2;
-  const url = `${baseUrl.replace(/\/$/, "")}/v1/chat/completions`;
+  const normalizedBase = baseUrl.replace(/\/$/, "");
+  const url = normalizedBase.endsWith("/v1")
+    ? `${normalizedBase}/chat/completions`
+    : `${normalizedBase}/v1/chat/completions`;
 
   const mediaUrl = config.mediaUrl ?? `data:${image.mimeType};base64,${image.base64}`;
   const content: OpenAIContentPart[] = [

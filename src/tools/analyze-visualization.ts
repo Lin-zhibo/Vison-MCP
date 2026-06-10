@@ -16,6 +16,7 @@ export async function handleAnalyzeVisualization(
     return {
       content: [{ type: "text", text: result.text }],
       structuredContent: {
+        text: result.text,
         model: result.model,
         analysisFocus,
         usage: result.usage,

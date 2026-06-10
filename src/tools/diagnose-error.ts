@@ -16,6 +16,7 @@ export async function handleDiagnoseError(
     return {
       content: [{ type: "text", text: result.text }],
       structuredContent: {
+        text: result.text,
         model: result.model,
         usage: result.usage,
       },

@@ -56,12 +56,12 @@ async function analyzeDirect(
       },
     );
 
+    const videoText = `**Video:** ${metadata.width}x${metadata.height}, ${metadata.duration.toFixed(1)}s, ${metadata.format}\n\n${result.text}`;
+
     return {
-      content: [{
-        type: "text",
-        text: `**Video:** ${metadata.width}x${metadata.height}, ${metadata.duration.toFixed(1)}s, ${metadata.format}\n\n${result.text}`,
-      }],
+      content: [{ type: "text", text: videoText }],
       structuredContent: {
+        text: videoText,
         mode: "direct",
         metadata: {
           format: metadata.format,
@@ -145,12 +145,12 @@ Synthesize these frame descriptions into a cohesive video analysis following the
       },
     );
 
+    const videoText = `**Video:** ${metadata.width}x${metadata.height}, ${metadata.duration.toFixed(1)}s, ${metadata.format}, ${frames.length} frames\n\n${synthesisResult.text}`;
+
     return {
-      content: [{
-        type: "text",
-        text: `**Video:** ${metadata.width}x${metadata.height}, ${metadata.duration.toFixed(1)}s, ${metadata.format}, ${frames.length} frames\n\n${synthesisResult.text}`,
-      }],
+      content: [{ type: "text", text: videoText }],
       structuredContent: {
+        text: videoText,
         mode: "frames",
         metadata: {
           format: metadata.format,
