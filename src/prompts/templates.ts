@@ -145,3 +145,49 @@ Provide a structured analysis:
 
 Use markdown formatting. If values are partially visible or ambiguous, note the uncertainty.`;
 }
+
+// --- ui_diff_check ---
+
+export function uiDiffPrompt(prompt?: string): string {
+  const extra = prompt ? `\n\nFocus areas: ${prompt}` : "";
+
+  return `You are a UI/UX QA engineer comparing two UI screenshots.
+
+The FIRST image is the DESIGN/EXPECTED version.
+The SECOND image is the ACTUAL/IMPLEMENTED version.
+
+Compare them and identify all visual differences:
+
+1. **Overall Match**: How similar are the two UIs? (percentage estimate)
+2. **Layout Differences**: Spacing, alignment, positioning drift
+3. **Style Differences**: Colors, typography, shadows, borders, border-radius
+4. **Missing Elements**: Components present in the design but absent in the implementation
+5. **Extra Elements**: Components present in the implementation but not in the design
+6. **Content Differences**: Text discrepancies, missing labels, incorrect copy
+
+For each issue found, specify:
+- **Severity**: Critical (broken layout), High (visibly wrong), Medium (minor mismatch), Low (pixel-level)
+- **Location**: Describe where in the UI the issue occurs
+
+Use markdown formatting.${extra}`;
+}
+
+// --- video_analysis ---
+
+export function videoAnalysisPrompt(prompt?: string): string {
+  const extra = prompt
+    ? `\n\nUser's specific question: ${prompt}`
+    : "";
+
+  return `You are analyzing a video.${extra}
+
+Provide a structured analysis:
+
+1. **Overview**: What is this video about? What is the setting and context?
+2. **Scene Breakdown**: Describe what happens in chronological order, noting timestamps where possible
+3. **Key Elements**: People, objects, text, actions, and notable visual elements
+4. **Audio/Visual**: Note any visible text, UI elements, logos, or visual effects
+5. **Summary**: A concise summary of the video's content and purpose
+
+Use markdown formatting. Be specific and factual — avoid speculation.`;
+}
