@@ -7,6 +7,8 @@ interface AnalyzeConfig {
   maxTokens?: number;
   temperature?: number;
   retries?: number;
+  mediaType?: 'image_url' | 'video_url';
+  mediaUrl?: string;
 }
 
 interface VisionResult {
@@ -20,9 +22,10 @@ interface VisionResult {
 }
 
 interface OpenAIContentPart {
-  type: "text" | "image_url";
+  type: "text" | "image_url" | "video_url";
   text?: string;
   image_url?: { url: string; detail?: "auto" | "low" | "high" };
+  video_url?: { url: string };
 }
 
 interface OpenAIResponse {
@@ -68,14 +71,11 @@ export async function analyzeImage(
   const maxRetries = config.retries ?? 2;
   const url = `${baseUrl.replace(/\/$/, "")}/v1/chat/completions`;
 
+  const mediaUrl = config.mediaUrl ?? `data:${image.mimeType};base64,${image.base64}`;
   const content: OpenAIContentPart[] = [
-    {
-      type: "image_url",
-      image_url: {
-        url: `data:${image.mimeType};base64,${image.base64}`,
-        detail: "auto",
-      },
-    },
+    config.mediaType === 'video_url'
+      ? { type: 'video_url', video_url: { url: mediaUrl } }
+      : { type: 'image_url', image_url: { url: mediaUrl, detail: 'auto' } },
     {
       type: "text",
       text: config.systemPrompt,

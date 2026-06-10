@@ -25,6 +25,7 @@ export async function handleUiDiff(
 
     const result = await analyzeImage(actual, {
       systemPrompt: `[EXPECTED DESIGN DESCRIPTION]:\n${expectedDesc.text}\n\n---\n\n${systemPrompt}`,
+      maxTokens: 4096,
     });
 
     return {

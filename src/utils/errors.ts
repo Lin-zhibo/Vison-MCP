@@ -20,7 +20,8 @@ export type ErrorCode =
   | "INVALID_PARAMETER"
   | "IMAGE_ERROR"
   | "API_ERROR"
-  | "BUSINESS_ERROR";
+  | "BUSINESS_ERROR"
+  | "VIDEO_ERROR";
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 

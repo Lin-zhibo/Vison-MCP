@@ -7,12 +7,19 @@ const execFileAsync = promisify(execFile);
 /** Supported video formats */
 const SUPPORTED_VIDEO_FORMATS = new Set(["mp4", "mov", "m4v"]);
 
+const FORMAT_TO_MIME: Record<string, string> = {
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  m4v: "video/x-m4v",
+};
+
 /** Maximum local video file size: 8 MB */
 const MAX_VIDEO_BYTES = 8 * 1024 * 1024;
 
 /** Video metadata from ffprobe */
 export interface VideoMetadata {
   format: string;
+  mimeType: string;
   duration: number;
   width: number;
   height: number;
@@ -38,8 +45,13 @@ export type VideoMode = "direct" | "frames" | "auto";
 
 /**
  * Check if FFmpeg and FFprobe are available on the system PATH.
+ * Result is memoized — the check only runs once per process.
  */
+let _ffmpegCache: { ffmpeg: string; ffprobe: string } | null = null;
+
 export async function checkFfmpeg(): Promise<{ ffmpeg: string; ffprobe: string }> {
+  if (_ffmpegCache) return _ffmpegCache;
+
   const errors: string[] = [];
 
   try {
@@ -58,11 +70,12 @@ export async function checkFfmpeg(): Promise<{ ffmpeg: string; ffprobe: string }
     throw new VisionError(
       `Required tools not found: ${errors.join(", ")}. ` +
         "Install FFmpeg: https://ffmpeg.org/download.html",
-      "IMAGE_ERROR",
+      "VIDEO_ERROR",
     );
   }
 
-  return { ffmpeg: "ffmpeg", ffprobe: "ffprobe" };
+  _ffmpegCache = { ffmpeg: "ffmpeg", ffprobe: "ffprobe" };
+  return _ffmpegCache;
 }
 
 /**
@@ -80,48 +93,73 @@ export async function probeVideo(videoPath: string): Promise<VideoMetadata> {
       videoPath,
     ], { timeout: 15_000 });
 
-    const data = JSON.parse(stdout);
-    const videoStream = data.streams?.find(
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(stdout);
+    } catch (parseError) {
+      throw new VisionError(
+        `ffprobe returned invalid JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}. stdout: ${stdout.slice(0, 200)}`,
+        "VIDEO_ERROR",
+        videoPath,
+      );
+    }
+
+    const streams = data.streams as Array<{ codec_type: string }> | undefined;
+    const videoStream = streams?.find(
       (s: { codec_type: string }) => s.codec_type === "video",
     );
 
     if (!videoStream) {
       throw new VisionError(
         "No video stream found in file",
-        "IMAGE_ERROR",
+        "VIDEO_ERROR",
         videoPath,
       );
     }
 
-    const format = (data.format?.format_name ?? "").split(",")[0];
-    if (!SUPPORTED_VIDEO_FORMATS.has(format)) {
+    const formatObj = data.format as Record<string, unknown> | undefined;
+    const formatStr = (typeof formatObj?.format_name === "string" ? formatObj.format_name : "").split(",")[0];
+    if (!SUPPORTED_VIDEO_FORMATS.has(formatStr)) {
       throw new VisionError(
-        `Unsupported video format: ${format}. Supported: ${[...SUPPORTED_VIDEO_FORMATS].join(", ")}`,
-        "IMAGE_ERROR",
+        `Unsupported video format: ${formatStr}. Supported: ${[...SUPPORTED_VIDEO_FORMATS].join(", ")}`,
+        "VIDEO_ERROR",
       );
     }
 
-    const sizeBytes = parseInt(data.format?.size ?? "0", 10);
+    const sizeBytes = parseInt(String(formatObj?.size ?? "0"), 10);
     if (sizeBytes > MAX_VIDEO_BYTES) {
       throw new VisionError(
         `Video exceeds ${MAX_VIDEO_BYTES / (1024 * 1024)}MB size limit (${(sizeBytes / (1024 * 1024)).toFixed(1)}MB)`,
-        "IMAGE_ERROR",
+        "VIDEO_ERROR",
         videoPath,
       );
     }
 
+    const durationRaw = formatObj?.duration;
+    const duration = parseFloat(String(durationRaw ?? "0"));
+    if (isNaN(duration)) {
+      throw new VisionError(
+        `Invalid video duration from ffprobe: ${String(durationRaw)}`,
+        "VIDEO_ERROR",
+        videoPath,
+      );
+    }
+
+    const mimeType = FORMAT_TO_MIME[formatStr] ?? `video/${formatStr}`;
+
     return {
-      format,
-      duration: parseFloat(data.format?.duration ?? "0"),
-      width: videoStream.width ?? 0,
-      height: videoStream.height ?? 0,
+      format: formatStr,
+      mimeType,
+      duration,
+      width: (videoStream as unknown as Record<string, unknown>).width as number ?? 0,
+      height: (videoStream as unknown as Record<string, unknown>).height as number ?? 0,
       sizeBytes,
     };
   } catch (error) {
     if (error instanceof VisionError) throw error;
     throw new VisionError(
       `Failed to probe video: ${error instanceof Error ? error.message : String(error)}`,
-      "IMAGE_ERROR",
+      "VIDEO_ERROR",
       videoPath,
     );
   }
@@ -189,7 +227,7 @@ export async function extractFrames(
     if (frames.length === 0) {
       throw new VisionError(
         "Failed to extract any frames from video",
-        "IMAGE_ERROR",
+        "VIDEO_ERROR",
         videoPath,
       );
     }
@@ -199,7 +237,7 @@ export async function extractFrames(
     if (error instanceof VisionError) throw error;
     throw new VisionError(
       `Failed to extract frames: ${error instanceof Error ? error.message : String(error)}`,
-      "IMAGE_ERROR",
+      "VIDEO_ERROR",
       videoPath,
     );
   }
@@ -222,7 +260,6 @@ export function detectVideoMode(): VideoMode {
     "glm-4v",
     "glm-4.6v",
     "cogview",
-    "video",
   ];
 
   for (const pattern of nativeVideoModels) {

@@ -3,7 +3,7 @@ import { analyzeImage } from "../client/vision-client.js";
 import { videoAnalysisPrompt } from "../prompts/templates.js";
 import { probeVideo, extractFrames, detectVideoMode } from "../utils/video.js";
 import { catchToolError, VisionError } from "../utils/errors.js";
-import { writeFile, readFile } from "node:fs/promises";
+import { writeFile, readFile, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -33,77 +33,49 @@ async function analyzeDirect(
   systemPrompt: string,
 ): Promise<CallToolResult> {
   let videoPath = videoUrl;
+  let isTemp = false;
 
   if (videoUrl.startsWith("http://") || videoUrl.startsWith("https://")) {
     videoPath = await downloadToTemp(videoUrl);
+    isTemp = true;
   }
 
-  const metadata = await probeVideo(videoPath);
-  const buffer = await readFile(videoPath);
-  const base64 = buffer.toString("base64");
+  try {
+    const metadata = await probeVideo(videoPath);
+    const buffer = await readFile(videoPath);
+    const base64 = buffer.toString("base64");
 
-  const apiKey = process.env.VISIONAI_API_KEY;
-  const baseUrl = process.env.VISIONAI_BASE_URL;
-  const model = process.env.VISIONAI_MODEL_NAME ?? "gpt-4o";
-
-  if (!apiKey || !baseUrl) {
-    throw new VisionError(
-      "VISIONAI_API_KEY and VISIONAI_BASE_URL must be configured",
-      "API_ERROR",
-    );
-  }
-
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/v1/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [{
-        role: "user",
-        content: [
-          {
-            type: "video_url",
-            video_url: { url: `data:video/${metadata.format};base64,${base64}` },
-          },
-          { type: "text", text: systemPrompt },
-        ],
-      }],
-      max_tokens: 4096,
-    }),
-    signal: AbortSignal.timeout(120_000),
-  });
-
-  if (!response.ok) {
-    throw new VisionError(
-      `Video API returned HTTP ${response.status}: ${response.statusText}`,
-      "API_ERROR",
-    );
-  }
-
-  const data = await response.json() as {
-    choices?: Array<{ message?: { content?: string } }>;
-    model?: string;
-  };
-  const text = data.choices?.[0]?.message?.content ?? "";
-
-  return {
-    content: [{
-      type: "text",
-      text: `**Video:** ${metadata.width}x${metadata.height}, ${metadata.duration.toFixed(1)}s, ${metadata.format}\n\n${text}`,
-    }],
-    structuredContent: {
-      mode: "direct",
-      metadata: {
-        format: metadata.format,
-        duration: metadata.duration,
-        width: metadata.width,
-        height: metadata.height,
+    const result = await analyzeImage(
+      { base64, mimeType: 'image/jpeg', source: videoUrl },
+      {
+        systemPrompt,
+        maxTokens: 4096,
+        retries: 2,
+        mediaType: 'video_url',
+        mediaUrl: `data:${metadata.mimeType};base64,${base64}`,
       },
-    },
-  };
+    );
+
+    return {
+      content: [{
+        type: "text",
+        text: `**Video:** ${metadata.width}x${metadata.height}, ${metadata.duration.toFixed(1)}s, ${metadata.format}\n\n${result.text}`,
+      }],
+      structuredContent: {
+        mode: "direct",
+        metadata: {
+          format: metadata.format,
+          duration: metadata.duration,
+          width: metadata.width,
+          height: metadata.height,
+        },
+      },
+    };
+  } finally {
+    if (isTemp) {
+      await unlink(videoPath).catch(() => {});
+    }
+  }
 }
 
 async function analyzeWithFrames(
@@ -113,33 +85,52 @@ async function analyzeWithFrames(
   fps?: number,
 ): Promise<CallToolResult> {
   let videoPath = videoUrl;
+  let isTemp = false;
 
   if (videoUrl.startsWith("http://") || videoUrl.startsWith("https://")) {
     videoPath = await downloadToTemp(videoUrl);
+    isTemp = true;
   }
 
-  const metadata = await probeVideo(videoPath);
-  const frames = await extractFrames(videoPath, {
-    fps: fps ?? 1,
-    maxFrames: maxFrames ?? 30,
-  });
+  try {
+    const metadata = await probeVideo(videoPath);
+    const frames = await extractFrames(videoPath, {
+      fps: fps ?? 1,
+      maxFrames: maxFrames ?? 30,
+    });
 
-  const frameDescriptions: string[] = [];
-  for (const frame of frames) {
-    const result = await analyzeImage(
-      { base64: frame.base64, mimeType: "image/jpeg", source: `frame-${frame.index}` },
-      {
-        systemPrompt: `Describe this video frame at ${frame.timestamp.toFixed(1)}s. Note visible elements, people, objects, text, actions. Be concise.`,
-        maxTokens: 500,
-      },
+    const CHUNK_SIZE = 5;
+    const frameDescriptions: { index: number; timestamp: number; text: string }[] = [];
+
+    for (let i = 0; i < frames.length; i += CHUNK_SIZE) {
+      const chunk = frames.slice(i, i + CHUNK_SIZE);
+      const results = await Promise.all(
+        chunk.map((frame) =>
+          analyzeImage(
+            { base64: frame.base64, mimeType: "image/jpeg", source: `frame-${frame.index}` },
+            {
+              systemPrompt: `Describe this video frame at ${frame.timestamp.toFixed(1)}s. Note visible elements, people, objects, text, actions. Be concise.`,
+              maxTokens: 500,
+            },
+          ).then((result) => ({
+            index: frame.index,
+            timestamp: frame.timestamp,
+            text: result.text,
+          }))
+        ),
+      );
+      frameDescriptions.push(...results);
+    }
+
+    frameDescriptions.sort((a, b) => a.index - b.index);
+    const descriptions = frameDescriptions.map(
+      (fd) => `[${fd.timestamp.toFixed(1)}s] ${fd.text}`,
     );
-    frameDescriptions.push(`[${frame.timestamp.toFixed(1)}s] ${result.text}`);
-  }
 
-  const synthesisResult = await analyzeImage(
-    { base64: frames[0].base64, mimeType: "image/jpeg", source: "summary" },
-    {
-      systemPrompt: `${systemPrompt}
+    const synthesisResult = await analyzeImage(
+      { base64: frames[0].base64, mimeType: "image/jpeg", source: "summary" },
+      {
+        systemPrompt: `${systemPrompt}
 
 **Video Metadata:**
 - Duration: ${metadata.duration.toFixed(1)}s
@@ -148,29 +139,34 @@ async function analyzeWithFrames(
 - Frames analyzed: ${frames.length}
 
 **Frame-by-frame descriptions:**
-${frameDescriptions.join("\n\n")}
+${descriptions.join("\n\n")}
 
 Synthesize these frame descriptions into a cohesive video analysis following the requested structure. Include timestamps from the frame descriptions.`,
-    },
-  );
-
-  return {
-    content: [{
-      type: "text",
-      text: `**Video:** ${metadata.width}x${metadata.height}, ${metadata.duration.toFixed(1)}s, ${metadata.format}, ${frames.length} frames\n\n${synthesisResult.text}`,
-    }],
-    structuredContent: {
-      mode: "frames",
-      metadata: {
-        format: metadata.format,
-        duration: metadata.duration,
-        width: metadata.width,
-        height: metadata.height,
       },
-      frameCount: frames.length,
-      usage: synthesisResult.usage,
-    },
-  };
+    );
+
+    return {
+      content: [{
+        type: "text",
+        text: `**Video:** ${metadata.width}x${metadata.height}, ${metadata.duration.toFixed(1)}s, ${metadata.format}, ${frames.length} frames\n\n${synthesisResult.text}`,
+      }],
+      structuredContent: {
+        mode: "frames",
+        metadata: {
+          format: metadata.format,
+          duration: metadata.duration,
+          width: metadata.width,
+          height: metadata.height,
+        },
+        frameCount: frames.length,
+        usage: synthesisResult.usage,
+      },
+    };
+  } finally {
+    if (isTemp) {
+      await unlink(videoPath).catch(() => {});
+    }
+  }
 }
 
 async function downloadToTemp(url: string): Promise<string> {
@@ -178,9 +174,21 @@ async function downloadToTemp(url: string): Promise<string> {
   if (!response.ok) {
     throw new VisionError(
       `Failed to download video: HTTP ${response.status}`,
-      "IMAGE_ERROR",
+      "VIDEO_ERROR",
       url,
     );
+  }
+
+  const contentLength = response.headers.get("content-length");
+  if (contentLength) {
+    const sizeBytes = parseInt(contentLength, 10);
+    const MAX_VIDEO_BYTES = 8 * 1024 * 1024;
+    if (!isNaN(sizeBytes) && sizeBytes > MAX_VIDEO_BYTES) {
+      console.error(
+        `[vison-mcp] Warning: remote video Content-Length is ${(sizeBytes / (1024 * 1024)).toFixed(1)}MB ` +
+        `(limit is ${MAX_VIDEO_BYTES / (1024 * 1024)}MB). Download may fail.`,
+      );
+    }
   }
 
   const buffer = Buffer.from(await response.arrayBuffer());
