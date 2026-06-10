@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { extname } from "node:path";
 import { VisionError } from "./errors.js";
 
 /** Supported MIME types for image processing */
@@ -11,6 +12,18 @@ const SUPPORTED_MIME_TYPES = new Set([
 
 /** Maximum image size: 20 MB */
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+
+/** Precomputed supported formats string for error messages */
+const SUPPORTED_FORMATS = [...SUPPORTED_MIME_TYPES].join(", ");
+
+/** Mapping from file extension to MIME type */
+const EXT_TO_MIME: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+};
 
 /** Processed image ready for the vision API */
 export interface ProcessedImage {
@@ -52,7 +65,7 @@ async function processDataUri(dataUri: string): Promise<ProcessedImage> {
 
   if (!SUPPORTED_MIME_TYPES.has(mimeType)) {
     throw new VisionError(
-      `Unsupported image format: ${mimeType}. Supported: ${[...SUPPORTED_MIME_TYPES].join(", ")}`,
+      `Unsupported image format: ${mimeType}. Supported: ${SUPPORTED_FORMATS}`,
       "IMAGE_ERROR",
     );
   }
@@ -108,12 +121,20 @@ async function processHttpUrl(url: string): Promise<ProcessedImage> {
     );
   }
 
-  const contentType = response.headers.get("content-type") ?? "image/png";
+  const contentType = response.headers.get("content-type");
+  if (!contentType) {
+    throw new VisionError(
+      "Server did not return a Content-Type header. Cannot determine image format.",
+      "IMAGE_ERROR",
+      url,
+    );
+  }
+
   const mimeType = contentType.split(";")[0].trim();
 
   if (!SUPPORTED_MIME_TYPES.has(mimeType)) {
     throw new VisionError(
-      `Unsupported image format: ${mimeType}. Supported: ${[...SUPPORTED_MIME_TYPES].join(", ")}`,
+      `Unsupported image format: ${mimeType}. Supported: ${SUPPORTED_FORMATS}`,
       "IMAGE_ERROR",
       `URL: ${url}, Content-Type: ${contentType}`,
     );
@@ -155,19 +176,12 @@ async function processLocalFile(filePath: string): Promise<ProcessedImage> {
   }
 
   // Detect MIME type from file extension
-  const ext = filePath.split(".").pop()?.toLowerCase();
-  const mimeMap: Record<string, string> = {
-    png: "image/png",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    gif: "image/gif",
-    webp: "image/webp",
-  };
-  const mimeType = mimeMap[ext ?? ""];
+  const ext = extname(filePath).slice(1).toLowerCase();
+  const mimeType = EXT_TO_MIME[ext];
 
   if (!mimeType) {
     throw new VisionError(
-      `Cannot determine image format from extension: .${ext ?? "unknown"}. Supported: ${Object.keys(mimeMap).join(", ")}`,
+      `Cannot determine image format from extension: .${ext || "unknown"}. Supported: ${Object.keys(EXT_TO_MIME).join(", ")}`,
       "IMAGE_ERROR",
       filePath,
     );
