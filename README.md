@@ -12,6 +12,8 @@
 | `diagnose_error_screenshot` | Analyze error screenshots and propose actionable fixes |
 | `understand_technical_diagram` | Interpret architecture diagrams, flowcharts, UML, ER, and system diagrams |
 | `analyze_data_visualization` | Read charts and dashboards to surface insights, trends, and anomalies |
+| `ui_diff_check` | Compare two UI screenshots to flag visual differences and implementation drift |
+| `video_analysis` | Inspect videos (MP4/MOV/M4V) — scene detection, event analysis, content summarization |
 
 ## Installation
 
