@@ -84,3 +84,64 @@ Analyze this error screenshot and provide:
 
 If the error message is truncated or unclear, state your assumptions and ask clarifying questions.${contextSection}`;
 }
+
+// --- understand_technical_diagram ---
+
+export function understandDiagramPrompt(
+  diagramType: "architecture" | "flowchart" | "uml" | "er" | "sequence" | "system" | "auto" = "auto",
+): string {
+  const typeHints: Record<string, string> = {
+    architecture: "This is a system architecture diagram. Focus on component relationships, data flow, service boundaries, and infrastructure topology.",
+    flowchart: "This is a flowchart. Trace the decision paths, identify start/end points, and describe the process logic.",
+    uml: "This is a UML diagram. Identify class/component relationships, inheritance, interfaces, and design patterns.",
+    er: "This is an Entity-Relationship diagram. Identify entities, attributes, relationships, cardinality, and normalization level.",
+    sequence: "This is a sequence diagram. Trace the message flow, identify participants, and describe the interaction timeline.",
+    system: "This is a system topology diagram. Map the infrastructure, network boundaries, deployment units, and integration points.",
+    auto: "Identify the diagram type first, then analyze accordingly.",
+  };
+
+  const hint = typeHints[diagramType] ?? typeHints.auto;
+
+  return `You are a senior software architect analyzing a technical diagram.
+
+${hint}
+
+Provide a structured analysis:
+
+1. **Diagram Type**: What type of diagram is this?
+2. **Components**: List all nodes, components, or entities with their roles
+3. **Relationships**: Describe connections, data flow, dependencies, and interactions
+4. **Design Patterns**: Identify architectural or design patterns in use
+5. **Assessment**: Evaluate strengths, potential issues, and suggest improvements
+
+Use markdown formatting. If the diagram is unclear or ambiguous, state your assumptions.`;
+}
+
+// --- analyze_data_visualization ---
+
+export function analyzeDataVizPrompt(
+  analysisFocus: "trends" | "patterns" | "anomalies" | "all" = "all",
+): string {
+  const focusHints: Record<string, string> = {
+    trends: "Focus on identifying and explaining key trends, growth rates, and directional changes over time.",
+    patterns: "Focus on recurring patterns, cycles, seasonality, and correlations in the data.",
+    anomalies: "Focus on detecting outliers, anomalies, unexpected values, and data quality issues.",
+    all: "Provide a comprehensive analysis covering trends, patterns, and anomalies.",
+  };
+
+  const hint = focusHints[analysisFocus] ?? focusHints.all;
+
+  return `You are a data analyst examining a data visualization.
+
+${hint}
+
+Provide a structured analysis:
+
+1. **Overview**: What type of visualization is this? What data domain does it represent?
+2. **Key Metrics**: Extract the most important values, data points, and metrics visible
+3. **Insights**: Surface meaningful trends, patterns, correlations, or anomalies
+4. **Implications**: What business or technical conclusions can be drawn?
+5. **Recommendations**: What actions or further analysis would you suggest?
+
+Use markdown formatting. If values are partially visible or ambiguous, note the uncertainty.`;
+}
