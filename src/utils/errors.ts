@@ -22,6 +22,8 @@ export type ErrorCode =
   | "API_ERROR"
   | "BUSINESS_ERROR";
 
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+
 /**
  * Helper to format a VisionError for display in tool responses.
  */
@@ -31,4 +33,26 @@ export function formatVisionError(error: VisionError): string {
     parts.push(`Details: ${error.details}`);
   }
   return parts.join("\n");
+}
+
+/**
+ * Shared error catch for all tool handlers.
+ * Converts VisionError and unknown errors into CallToolResult with isError: true.
+ */
+export function catchToolError(error: unknown): CallToolResult {
+  if (error instanceof VisionError) {
+    return {
+      content: [{ type: "text", text: formatVisionError(error) }],
+      isError: true,
+    };
+  }
+  return {
+    content: [
+      {
+        type: "text",
+        text: `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
+      },
+    ],
+    isError: true,
+  };
 }
