@@ -10,6 +10,8 @@
 | `extract_text_from_screenshot` | OCR optimized for terminals, code, documents, and general content |
 | `ui_to_artifact` | Convert UI screenshots into code, prompts, specs, or descriptions |
 | `diagnose_error_screenshot` | Analyze error screenshots and propose actionable fixes |
+| `understand_technical_diagram` | Interpret architecture diagrams, flowcharts, UML, ER, and system diagrams |
+| `analyze_data_visualization` | Read charts and dashboards to surface insights, trends, and anomalies |
 
 ## Installation
 
